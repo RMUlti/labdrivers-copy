@@ -14,7 +14,7 @@ for then you might want to check out one of the projects listed at
 
 ### Usage
 
-The package structure is as follows (with the __init__.py omitted):
+The general package structure is something like below (with the __init__.py omitted):
 
 	labdrivers/
 	|-- keithley
