@@ -1,6 +1,6 @@
 import logging
 
-import visa
+import pyvisa as visa
 
 # create a logger object for this module
 logger = logging.getLogger(__name__)

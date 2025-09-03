@@ -1,6 +1,7 @@
 import logging
+import time
 
-import visa
+import pyvisa as visa
 
 # create a logger object for this module
 logger = logging.getLogger(__name__)
@@ -20,40 +21,59 @@ class Sr830:
             # the pyvisa manager we'll use to connect to the GPIB resources
             self.resource_manager = visa.ResourceManager()
         except OSError:
-            logger.exception("\n\tCould not find the VISA library. Is the VISA driver installed?\n\n")
-        
+            logger.exception(
+                "\n\tCould not find the VISA library. Is the VISA driver installed?\n\n"
+            )
+
         self._gpib_addr = gpib_addr
         self._instrument = None
-        self._instrument = self.resource_manager.open_resource("GPIB::%d" % self._gpib_addr)
+        self._instrument = self.resource_manager.open_resource(
+            "GPIB::%d" % self._gpib_addr
+        )
+        self.write_termination = "\n"
+        self.read_termination = "\n"
+
+    def single_measurement_mode(self):
+        """
+        This is the measurement mode you probably want.
+        I'm gonna be honest I have no idea where I found this command, so I am not sure it even does anything...
+        """
+        self._instrument.write("MEAS:CONT 0")
+        self._instrument.write("MEASU:CONT 0")
+
+    def clear_status_and_buffer(self):
+        self._instrument.write("*CLS")
+        self._instrument.write("REST")
+        self._instrument.write("CLRB")
 
     @property
     def sync_filter(self):
         """
         The state of the sync filter (< 200 Hz).
         """
-        return self._instrument.query_ascii_values('SYNC?')[0]
+        return self._instrument.query_ascii_values("SYNC?")[0]
 
     @sync_filter.setter
     def sync_filter(self, value):
         if isinstance(value, bool):
-            self._instrument.query_ascii_values('SYNC {}'.format(int(value)))
+            self._instrument.query_ascii_values("SYNC {}".format(int(value)))
         else:
-            raise RuntimeError('Sync filter input expects [True|False].')
+            raise RuntimeError("Sync filter input expects [True|False].")
 
     @property
     def low_pass_filter_slope(self):
         """
         The low pass filter slope in units of dB/octave. The choices are:
 
-         i   slope(dB/oct) 
+         i   slope(dB/oct)
         ---  -------------
          0         6
          1        12
          2        18
          3        24
         """
-        response = self._instrument.query_ascii_values('OSFL?')[0]
-        slope = {'0': '6 dB/oct', '1': '12 dB/oct', '2': '18 dB/oct', '3': '24 dB/oct'}
+        response = self._instrument.query_ascii_values("OSFL?")[0]
+        slope = {"0": "6 dB/oct", "1": "12 dB/oct", "2": "18 dB/oct", "3": "24 dB/oct"}
         return slope[response]
 
     @low_pass_filter_slope.setter
@@ -64,18 +84,18 @@ class Sr830:
         :param value: The slope in units of dB/oct.
         """
         if value in (6, 12, 18, 24):
-            slope = {6: '0', 12: '1', 18: '2', 24: '3'}
-            self._instrument.query_ascii_values('OSFL {}'.format(slope[value]))
+            slope = {6: "0", 12: "1", 18: "2", 24: "3"}
+            self._instrument.query_ascii_values("OSFL {}".format(slope[value]))
         else:
-            raise RuntimeError('Low pass filter slope only accepts [6|12|18|24].')
+            raise RuntimeError("Low pass filter slope only accepts [6|12|18|24].")
 
     @property
     def reserve(self):
         """
         The reserve mode of the SR830.
         """
-        reserve = {'0': 'high', '1': 'normal', '2': 'low noise'}
-        response = self._instrument.query_ascii_values('RMOD?')[0]
+        reserve = {"0": "high", "1": "normal", "2": "low noise"}
+        response = self._instrument.query_ascii_values("RMOD?")[0]
         return reserve[response]
 
     @reserve.setter
@@ -85,30 +105,39 @@ class Sr830:
         elif isinstance(value, int):
             mode = value
         else:
-            raise RuntimeError('Reserve expects a string or integer argument.')
-        
-        modes_dict = {'hi': 0, 'high': 0,   'high reserve': 0, 0: 0,
-                      'normal': 1,          1: 1,
-                      'lo': 2, 'low': 2,    'low noise': 2, 2: 2}
+            raise RuntimeError("Reserve expects a string or integer argument.")
+
+        modes_dict = {
+            "hi": 0,
+            "high": 0,
+            "high reserve": 0,
+            0: 0,
+            "normal": 1,
+            1: 1,
+            "lo": 2,
+            "low": 2,
+            "low noise": 2,
+            2: 2,
+        }
         if mode in modes_dict.keys():
-            self._instrument.query_ascii_values('RMOD {}'.format(mode))
+            self._instrument.query_ascii_values("RMOD {}".format(mode))
         else:
-            raise RuntimeError('Incorrect key for reserve.')
+            raise RuntimeError("Incorrect key for reserve.")
 
     @property
     def frequency(self):
         """
         The frequency of the output signal.
         """
-        return self._instrument.query_ascii_values('FREQ?')[0]
+        return self._instrument.query_ascii_values("FREQ?")[0]
 
     @frequency.setter
     def frequency(self, value):
         if 0.001 <= value <= 102000:
             self._instrument.write("FREQ {}".format(value))
         else:
-            raise RuntimeError('Valid frequencies are between 0.001 Hz and 102 kHz.')
-    
+            raise RuntimeError("Valid frequencies are between 0.001 Hz and 102 kHz.")
+
     # INPUT and FILTER
 
     @property
@@ -120,16 +149,33 @@ class Sr830:
             2: I (1 MOhm)
             3: I (100 MOhm)
         """
-        return self._instrument.query_ascii_values('ISRC?')[0]
+        return self._instrument.query_ascii_values("ISRC?")[0]
 
     @input.setter
     def input(self, input_value):
-        input_ = {'0': 0, 0: 0, 'A': 0,
-                  '1': 1, 1: 1, 'A-B': 1,    'DIFFERENTIAL': 1,
-                  '2': 2, 2: 2, 'I1': 2,     'I1M': 2,           'I1MOHM': 2,
-                  '3': 3, 3: 3, 'I100': 3,   'I100M': 3,         'I100MOHM': 3}
+        input_ = {
+            "0": 0,
+            0: 0,
+            "A": 0,
+            "1": 1,
+            1: 1,
+            "A-B": 1,
+            "DIFFERENTIAL": 1,
+            "2": 2,
+            2: 2,
+            "I1": 2,
+            "I1M": 2,
+            "I1MOHM": 2,
+            "3": 3,
+            3: 3,
+            "I100": 3,
+            "I100M": 3,
+            "I100MOHM": 3,
+        }
         if isinstance(input_value, str):
-            query = input_value.upper().replace('(', '').replace(')', '').replace(' ', '')
+            query = (
+                input_value.upper().replace("(", "").replace(")", "").replace(" ", "")
+            )
         else:
             query = input_value
 
@@ -137,103 +183,190 @@ class Sr830:
             command = input_[query]
             self._instrument.write("ISRC {}".format(command))
         else:
-            raise RuntimeError('Unexpected input for SR830 input command.')
+            raise RuntimeError("Unexpected input for SR830 input command.")
 
     @property
     def input_shield_grounding(self):
         """Tells whether the shield is floating or grounded."""
         response = self._instrument.query_ascii_values("IGND?")[0]
-        return {'0': 'Float', '1': 'Ground'}[response]
+        return {"0": "Float", "1": "Ground"}[response]
 
     @input_shield_grounding.setter
     def input_shield_grounding(self, ground_type):
-        ground_types = {'float': '0', 'floating': '0', '0': '0',
-                        'ground': '1', 'grounded': '1', '1': '1'}
+        ground_types = {
+            "float": "0",
+            "floating": "0",
+            "0": "0",
+            "ground": "1",
+            "grounded": "1",
+            "1": "1",
+        }
         if ground_type.lower() in ground_types.keys():
             self._instrument.write("IGND {}".format(ground_type.lower()))
         else:
-            raise RuntimeError('Improper input grounding shield type.')
+            raise RuntimeError("Improper input grounding shield type.")
 
     @property
     def phase(self):
         """
         The phase of the output relative to the input.
         """
-        return self._instrument.query_ascii_values('PHAS?')[0]
+        return self._instrument.query_ascii_values("PHAS?")[0]
 
     @phase.setter
     def phase(self, value):
-        if (isinstance(value, float) or isinstance(value, int)) and -360.0 <= value <= 729.99:
+        if (
+            isinstance(value, float) or isinstance(value, int)
+        ) and -360.0 <= value <= 729.99:
             self._instrument.write("PHAS {}".format(value))
         else:
-            raise RuntimeError('Given phase is out of range for the SR830. Should be between -360.0 and 729.99.')
-    
+            raise RuntimeError(
+                "Given phase is out of range for the SR830. Should be between -360.0 and 729.99."
+            )
+
     @property
     def amplitude(self):
         """
         The amplitude of the voltage output.
         """
-        return self._instrument.query_ascii_values('SLVL?')[0]
-    
+        return self._instrument.query_ascii_values("SLVL?")[0]
+
     @amplitude.setter
     def amplitude(self, value):
         if 0.004 <= value <= 5.0:
             self._instrument.write("SLVL {}".format(value))
         else:
-            raise RuntimeError('Given amplitude is out of range. Expected 0.004 to 5.0 V.')
+            raise RuntimeError(
+                "Given amplitude is out of range. Expected 0.004 to 5.0 V."
+            )
 
     @property
     def time_constant(self):
         """
         The time constant of the SR830.
         """
-        time_constant = {0: '10 us',  10: '1 s',
-                         1: '30 us',  11: '3 s',
-                         2: '100 us', 12: '10 s',
-                         3: '300 us', 13: '30 s',
-                         4: '1 ms',   14: '100 s',
-                         5: '3 ms',   15: '300 s',
-                         6: '10 ms',  16: '1 ks',
-                         7: '30 ms',  17: '3 ks',
-                         8: '100 ms', 18: '10 ks',
-                         9: '300 ms', 19: '30 ks'}
+        time_constant = {
+            0: "10 us",
+            10: "1 s",
+            1: "30 us",
+            11: "3 s",
+            2: "100 us",
+            12: "10 s",
+            3: "300 us",
+            13: "30 s",
+            4: "1 ms",
+            14: "100 s",
+            5: "3 ms",
+            15: "300 s",
+            6: "10 ms",
+            16: "1 ks",
+            7: "30 ms",
+            17: "3 ks",
+            8: "100 ms",
+            18: "10 ks",
+            9: "300 ms",
+            19: "30 ks",
+        }
 
-        const_index = self._instrument.query_ascii_values('OFLT?')[0]
+        const_index = self._instrument.query_ascii_values("OFLT?")[0]
         return time_constant[const_index]
 
     @time_constant.setter
     def time_constant(self, value):
-        if value.lower() == 'increment':
+        if value.lower() == "increment":
             if self.time_constant + 1 <= 19:
                 self.time_constant += 1
-        elif value.lower() == 'decrement':
+        elif value.lower() == "decrement":
             if self.time_constant - 1 >= 0:
                 self.time_constant -= 1
         elif 0 <= value <= 19:
             self._instrument.write("SENS {}".format(value))
         else:
-            raise RuntimeError('Time constant index must be between 0 and 19 (inclusive).')
+            raise RuntimeError(
+                "Time constant index must be between 0 and 19 (inclusive)."
+            )
 
     @property
     def sensitivity(self):
         """Voltage/current sensitivity for inputs."""
-        sensitivity = {0: "2 nV/fA",		13: "50 uV/pA",
-                       1: "5 nV/fA",		14: "100 uV/pA",
-                       2: "10 nV/fA",	    15: "200 uV/pA",
-                       3: "20 nV/fA",	    16: "500 uV/pA",
-                       4: "50 nV/fA",	    17: "1 mV/nA",
-                       5: "100 nV/fA",	    18: "2 mV/nA",
-                       6: "200 nV/fA",	    19: "5 mV/nA",
-                       7: "500 nV/fA",	    20: "10 mV/nA",
-                       8: "1 uV/pA",		21: "20 mV/nA",
-                       9: "2 uV/pA",		22: "50 mV/nA",
-                       10: "5 uV/pA",		23: "100 mV/nA",
-                       11: "10 uV/pA",	    24: "200 mV/nA",
-                       12: "20 uV/pA",	    25: "500 mV/nA",
-                       26: "1 V/uA"}
+        sensitivity = {
+            0: 2e-9,
+            13: 50e-6,
+            1: 5e-9,
+            14: 100e-6,
+            2: 10e-9,
+            15: 200e-6,
+            3: 20e-9,
+            16: 500e-6,
+            4: 50e-9,
+            17: 1e-3,
+            5: 100e-9,
+            18: 2e-3,
+            6: 200e-9,
+            19: 5e-3,
+            7: 500e-9,
+            20: 10e-3,
+            8: 1e-6,
+            21: 20e-3,
+            9: 2e-6,
+            22: 50e-3,
+            10: 5e-6,
+            23: 100e-3,
+            11: 10e-6,
+            24: 200e-3,
+            12: 20e-6,
+            25: 500e-3,
+            26: 1,
+        }
 
-        sens_index = self._instrument.query_ascii_values('SENS?')[0]
-        return sensitivity[sens_index]
+        while True:
+            sens_key = self._instrument.query_ascii_values("SENS?")[0]
+            if sens_key in range(0, 27):
+                return [sens_key, sensitivity[sens_key]]
+            else:
+                self.reset_scan()
+                time.sleep(0.1)
+
+    @property
+    def sensitivityunits(self):
+        """Voltage/current sensitivity for inputs."""
+        sensitivity = {
+            0: "2 nV/fA",
+            13: "50 uV/pA",
+            1: "5 nV/fA",
+            14: "100 uV/pA",
+            2: "10 nV/fA",
+            15: "200 uV/pA",
+            3: "20 nV/fA",
+            16: "500 uV/pA",
+            4: "50 nV/fA",
+            17: "1 mV/nA",
+            5: "100 nV/fA",
+            18: "2 mV/nA",
+            6: "200 nV/fA",
+            19: "5 mV/nA",
+            7: "500 nV/fA",
+            20: "10 mV/nA",
+            8: "1 uV/pA",
+            21: "20 mV/nA",
+            9: "2 uV/pA",
+            22: "50 mV/nA",
+            10: "5 uV/pA",
+            23: "100 mV/nA",
+            11: "10 uV/pA",
+            24: "200 mV/nA",
+            12: "20 uV/pA",
+            25: "500 mV/nA",
+            26: "1 V/uA",
+        }
+
+        while True:
+            sens_key = self._instrument.query_ascii_values("SENS?")[0]
+            if sens_key in range(0, 27):
+                return sensitivity[sens_key]
+            else:
+                self.reset_scan()
+                time.sleep(0.1)
 
     @sensitivity.setter
     def sensitivity(self, value):
@@ -241,7 +374,36 @@ class Sr830:
             self._instrument.write("SENS {}".format(value))
         else:
             raise RuntimeError("Invalid input for sensitivity.")
-                
+
+    def overload_pass(self):
+        ovld_pass = True
+        self._instrument.query_ascii_values("LIAS? 0")[0]
+        self._instrument.query_ascii_values("LIAS? 1")[0]
+        self._instrument.query_ascii_values("LIAS? 2")[0]
+        if self._instrument.query_ascii_values("LIAS? 0")[0] != 0:
+            ovld_pass = False
+        else:
+            pass
+        if self._instrument.query_ascii_values("LIAS? 1")[0] != 0:
+            ovld_pass = False
+        else:
+            pass
+        if self._instrument.query_ascii_values("LIAS? 2")[0] != 0:
+            ovld_pass = False
+        else:
+            pass
+        return ovld_pass
+
+    def freq_lock_pass(self):
+        lock_pass = True
+        self._instrument.query_ascii_values("LIAS? 3")[0]
+
+        if self._instrument.query_ascii_values("LIAS? 3")[0] != 0:
+            lock_pass = False
+        else:
+            pass
+        return lock_pass
+
     def set_display(self, channel, display, ratio=0):
         """Set the display of the amplifier.
 
@@ -264,7 +426,7 @@ class Sr830:
             ratio (int, optional): display the output as a ratio
         """
         self._instrument.write("DDEF {}, {}, {}".format(channel, display, ratio))
-        
+
     def get_display(self, channel):
         """Get the display configuration of the amplifier.
 
@@ -283,7 +445,7 @@ class Sr830:
             int: the parameter being displayed by the amplifier
         """
         return self._instrument.query_ascii_values("DDEF? {}".format(channel))
-    
+
     def single_output(self, value):
         """Get the current value of a single parameter.
         Possible parameter values are:
@@ -296,7 +458,7 @@ class Sr830:
             float: the value of the specified parameter
         """
         return self._instrument.query_ascii_values("OUTP? {}".format(value))[0]
-            
+
     def multiple_output(self, *values):
         """Queries the SR830 for multiple output. See below for possibilities.
 
@@ -325,72 +487,94 @@ class Sr830:
         Mimics pressing the Auto Gain button. Does nothing if the time
         constant is more than 1 second.
         """
-        self._instrument.query_ascii_values("AGAN")
+        self._instrument.write("AGAN")
 
     def auto_reserve(self):
         """
         Mimics pressing the Auto Reserve button.
         """
-        self._instrument.query_ascii_values("ARSV")
+        self._instrument.write("ARSV")
 
     def auto_phase(self):
         """
         Mimics pressing the Auto Phase button.
         """
-        self._instrument.query_ascii_values("APHS")
+        self._instrument.write("APHS")
 
-    def auto_offset(self, parameter):
+    def auto_offset(self, i):
         """
         Automatically offsets the given voltage parameter.
 
         :param parameter: A string from ['x'|'y'|'r'], case insensitive.
         """
-        self._instrument.query_ascii_values("AOFF {}".format(parameter.upper()))
+        if i in [1, 2, 3]:
+            self._instrument.write(f"AOFF {i}")
+        else:
+            raise RuntimeError("You can auto offset 1 (X), 2 (Y), or 3 (R).")
+
+    def expand(self, mult, offset=0, signal=1):
+        if signal in [1, 2, 3]:
+            if mult in [0, 1, 2]:
+                self._instrument.write(f"OEXP {signal},{offset},{mult}")
+            else:
+                raise RuntimeError("You can auto offset 1 (X), 2 (Y), or 3 (R).")
+        else:
+            raise RuntimeError("You can expand 1 (X), 2 (Y), or 3 (R).")
 
     # Data storage commands
 
     @property
     def data_sample_rate(self):
         """Data sample rate, which can be 62.5 mHz, 512 Hz, or Trigger.
-        
+
         Expected strings: 62.5, 62.5 mhz, 62.5mhz, mhz, 0, 512, 512hz, 512 hz,
         hz, 13, trig, trigger, 14."""
-        rate_dict = {'0': '62.5 mHz', '13': '512 Hz', '14': 'Trigger'}
+        rate_dict = {"0": "62.5 mHz", "13": "512 Hz", "14": "Trigger"}
 
         response = self._instrument.query_ascii_values("SRAT?")[0]
         return rate_dict[response]
 
     @data_sample_rate.setter
     def data_sample_rate(self, rate):
-        rate_dict = {'62.5': '0',   '0': '0',   '62.5mhz': '0', 'mhz': '0',
-                     '512': '13',   '13': '13', '512hz': '13',  'hz': '13',
-                     'trig': '14',  '14': '14', 'trigger': '14'}
-        rate_value = str(rate).lower().replace(' ', '')
+        rate_dict = {
+            "62.5": "0",
+            "0": "0",
+            "62.5mhz": "0",
+            "mhz": "0",
+            "512": "13",
+            "13": "13",
+            "512hz": "13",
+            "hz": "13",
+            "trig": "14",
+            "14": "14",
+            "trigger": "14",
+        }
+        rate_value = str(rate).lower().replace(" ", "")
         if rate_value in rate_dict.keys():
             self._instrument.write("SRAT {}".format(rate_value))
         else:
-            raise RuntimeError('Sample rate input not recognized.')
+            raise RuntimeError("Sample rate input not recognized.")
 
     @property
     def data_scan_mode(self):
         """Data scan mode, which is either a 1-shot or a loop.
-        
+
         Expected strings: 1-shot, 1 shot, 1shot, loop."""
-        scan_modes = {'0': '1-shot', '1': 'loop'}
+        scan_modes = {"0": "1-shot", "1": "loop"}
         response = self._instrument.query_ascii_values("SEND?")[0]
         return scan_modes[response]
 
     @data_scan_mode.setter
     def data_scan_mode(self, scan_mode):
-        scan_modes = {'1shot': '0', 'loop': '1'}
-        mode = scan_mode.replace('-', '').replace(' ', '')
+        scan_modes = {"1shot": "0", "loop": "1"}
+        mode = scan_mode.replace("-", "").replace(" ", "")
         self._instrument.write("SEND {}".format(scan_modes[mode]))
 
     @property
     def trigger_starts_scan(self):
         """Determines if a Trigger starts scan mode."""
         response = self._instrument.query_ascii_values("TSTR?")[0]
-        return {'0': False, '1': True}[response]
+        return {"0": False, "1": True}[response]
 
     @trigger_starts_scan.setter
     def trigger_starts_scan(self, starts):
@@ -412,3 +596,18 @@ class Sr830:
     def reset_scan(self):
         """Resets a scan and releases all stored data."""
         self._instrument.write("REST")
+
+    @property
+    def offset_expand(self):
+        response = self._instrument.query_ascii_values("OEXP? 1")
+        expand = {0: 1, 1: 10, 2: 100}
+        return [response[0], expand[response[1]]]
+
+    @property
+    def harmonic(self):
+        answer = self._instrument.query_ascii_values("HARM?")[0]
+        return answer
+
+    @harmonic.setter
+    def harmonic(self, i):
+        self._instrument.write(f"HARM {i}")

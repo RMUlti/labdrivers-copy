@@ -1,14 +1,19 @@
 import logging
 
 import clr
+clr.AddReference('System')
+#from clr import System
+from System import Reflection
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 
 # load the C# .dll supplied by Quantum Design
-clr.AddReference('QDInstrument')
+#full_filename = r'C:\ProgramData\Anaconda3\Lib\site-packages\labdrivers\QDInstrument.dll'
+#Reflection.Assembly.LoadFile(full_filename)
+clr.AddReference('C:\ProgramData\Miniconda3\Lib\site-packages\labdrivers\quantumdesign\QDInstrument.dll')
 
-if clr.FindAssembly('QDInstrument') is None:
+if clr.FindAssembly('C:\ProgramData\Anaconda3\Lib\site-packages\labdrivers\QDInstrument.dll') is None:
     logger.exception('\n\tCould not find QDInstrument.dll')
 else:
     logger.exception('\n\tFound QDInstrument.dll at {}'.format(clr.FindAssembly('QDInstrument')))
@@ -94,7 +99,7 @@ class QdInstrument:
         :param rate:  Ramp rate of the applied magnetic field in Gauss/sec.
         :return: None
         """
-        return self.qdi_instrument.SetField(field, rate, 0, 0)
+        self.qdi_instrument.SetField(field, rate, 0, 0)
 
     def waitForField(self, delay=5, timeout=600):
         """
@@ -116,17 +121,24 @@ class QdInstrument:
         observed in the WaitConditionReached function.
         """
         return self.qdi_instrument.GetPosition("Horizontal Rotator", 0, 0)
+        #return self.qdi_instrument.GetPPMSItem(3,0,True)
 
-    def setPosition(self, position, speed):
+    def setPosition(self, position):
         """Ramps the instrument position to the set point.
 
         Parameters are from:
         SetPosition(string Axis, double Position, double Speed, QDInstrumentBase.PositionMode Mode)
 
         :param position: Position on the rotator to move to.
-        :param speed: Rate of change of position on the rotator.
+        :param speed: Rate of change of position on the rotator. Set at 0.8deg/sec
         """
-        return self.qdi_instrument.SetPosition("Horizontal Rotator", position, speed, 0)
+        return self.qdi_instrument.SetPosition("Horizontal Rotator", position, 0.8, 0)
+#        cmd = 'MOVE ' + str("{:e}".format(position)) + ' 0 14'
+#        return self.qdi_instrument.SendPPMSCommand(cmd, '', '',0,0)[0]
+    
+    def sendPpmsCommand(self, i0, i1, i2, i3, i4):
+        cmd = 'MOVE ' + str("{:e}".format(i0)) + ' 0 14'
+        return self.qdi_instrument.SendPPMSCommand(cmd, i1, i2,i3,i4)
 
     def waitForPosition(self, delay, timeout):
         """
@@ -138,6 +150,10 @@ class QdInstrument:
         :return: 0 when complete.
         """
         return self.qdi_instrument.WaitFor(False, False, True, False, delay, timeout)
+        
+   # def sendPpmsCommand(self, string PpmsCommand, string PpmsReply, string ErrorReply, int Device, double timeout):
+   #     return self. qdi_instrument.SnedPpmsCommand
+    
 
 
 class Dynacool(QdInstrument):
